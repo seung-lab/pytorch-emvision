@@ -58,3 +58,14 @@ def pad_size(kernel_size, mode):
         return tuple(x // 2 for x in ks)
     elif mode == 'full':
         return tuple(x - 1 for x in ks)
+
+
+def crop_margin(kernel_size, mode):
+    """The margin to crop to match tensor sizes across convolutions."""
+    if mode == "same":
+        return _triple(0)
+    elif mode == "valid":
+        # margins == padding for "same" convolutions
+        return pad_size(kernel_size, "same")
+    else:
+        raise ValueError(f"unsupported convolution mode: {mode}")
