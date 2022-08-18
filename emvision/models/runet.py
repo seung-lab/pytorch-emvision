@@ -156,6 +156,7 @@ class RUNet(nn.Module):
 
         self.final = INReLU(width[0])
 
+        self.scale_factor = scale_factor
         self.inner_crop_margins = self.compute_inner_crops()
         self.init_weights()
 
@@ -204,3 +205,30 @@ class RUNet(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
                 nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
+
+    def input_patch_sizes(self, num_shapes):
+        """Computes acceptable patch sizes for valid convs"""
+        mintopsz = (0, 0, 0)
+        for uconv in reversed(self.uconvs):
+            crop = utils.mul3(uconv.crop_margin, (2, 2, 2))
+            mintopsz = utils.sum3(mintopsz, crop)
+            mintopsz = utils.div3(mintopsz, (2, 2, 2))
+
+        mintopsz = utils.sum3(mintopsz, (1, 1, 1)) # need at least one extra voxel
+
+        def input_size(topsz):
+            sz = topsz
+            for dconv in self.dconvs:
+                crop = utils.mul3(dconv.crop_margin, (2, 2, 2))
+                sz = utils.sum3(sz, crop)
+                sz = utils.mul3(sz, self.scale_factor)
+            return utils.sum3(sz, utils.mul3(self.iconv.crop_margin, (2, 2, 2)))
+
+        return [input_size(utils.sum3(mintopsz, (i, i, i))) for i in range(num_shapes)]
+
+    def output_patch_sizes(self, num_shapes):
+        """Computes output patch sizes for the valid input patch sizes"""
+        return [
+            utils.sub3(inputsz, utils.mul3(self.crop_margin, (2, 2, 2)))
+            for inputsz in self.input_patch_sizes(num_shapes)
+        ]
