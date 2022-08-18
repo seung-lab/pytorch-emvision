@@ -2,6 +2,8 @@ import collections.abc
 import operator
 from itertools import repeat
 
+import torch
+
 
 def _ntuple(n):
     """
@@ -28,6 +30,10 @@ def div3(x,y):
     return (x[0]//y[0], x[1]//y[1], x[2]//y[2])
 
 
+def sub3(x,y):
+    return (x[0]-y[0], x[1]-y[1], x[2]-y[2])
+
+
 def residual_sum(x, skip, margin, residual):
     return x + crop3d(skip, margin) if residual else x
 
@@ -46,6 +52,21 @@ def crop3d_center(x, ref):
     assert all((x - r) % 2 == 0 for x,r in zip(xs,rs))
     margin = [(x - r) // 2 for x,r in zip(xs,rs)]
     return crop3d(x, margin)
+
+
+def pad3d_center(x, ref):
+    xs = x.size()[-3:]
+    rs = ref.size()[-3:]
+    assert all(x <= r for x,r in zip(xs,rs))
+    assert all((r - x) % 2 == 0 for x,r in zip(xs,rs))
+    margin = [(r - x) // 2 for x,r in zip(xs,rs)]
+
+    padded = torch.zeros_like(ref, dtype=x.dtype)
+    padded[..., 
+        margin[0]:-margin[0], margin[1]:-margin[1], margin[2]:-margin[2]
+    ] = x
+
+    return padded
 
 
 def pad_size(kernel_size, mode):
