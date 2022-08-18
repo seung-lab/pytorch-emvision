@@ -10,3 +10,4 @@ from . import rsunet_v3
 from .dtu2 import *
 from .vrunet import *
 from .dynamic_rsunet import *
+from .runet import *
