@@ -159,6 +159,8 @@ class RUNet(nn.Module):
         self.inner_crop_margins = self.compute_inner_crops()
         self.init_weights()
 
+        self.crop_margin = self.compute_crop()
+
     def forward(self, x):
         x = self.iconv(x)
 
@@ -193,9 +195,8 @@ class RUNet(nn.Module):
 
         return crops
 
-    @property
-    def crop_margin(self):
-        level0_crops = utils.sum3(self.iconv.crop_margin, self.uconvs.crop_margin)
+    def compute_crop(self):
+        level0_crops = utils.sum3(self.iconv.crop_margin, self.uconvs[-1].crop_margin)
 
         return utils.sum3(level0_crops, self.inner_crop_margins[-1])
 
