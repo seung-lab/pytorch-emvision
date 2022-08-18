@@ -80,7 +80,7 @@ width = [16,32,64,128,256,512]
 
 class isoRSUNet(nn.Module):
     def __init__(self, width=width):
-        super(RSUNet, self).__init__()
+        super(isoRSUNet, self).__init__()
         assert len(width) > 1
         depth = len(width) - 1
 

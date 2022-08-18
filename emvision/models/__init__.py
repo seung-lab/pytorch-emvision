@@ -6,6 +6,7 @@ from .rsunet_act_nn import *
 from .rsunet_act_nn_gn import *
 from .rsunet_2d3d import *
 from .rsunet_2d3d_gn import *
+from .iso_rsunet import *
 from . import rsunet_v3
 from .dtu2 import *
 from .vrunet import *
