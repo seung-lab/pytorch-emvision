@@ -3,6 +3,8 @@ Residual U-Net with same or valid convolutions
 """
 from __future__ import annotations
 
+from typing import Optional
+
 import torch.nn as nn
 
 from . import utils
@@ -32,18 +34,21 @@ def conv(
 
 
 class INReLU(nn.Sequential):
-    def __init__(self, in_channels, normalization=nn.InstanceNorm3d, activation=nn.ReLU):
+    def __init__(self, in_channels, norm=nn.InstanceNorm3d, activation=nn.ReLU):
         super(INReLU, self).__init__()
-        self.add_module("norm", normalization(in_channels))
+        if norm:
+            self.add_module("norm", norm(in_channels))
         self.add_module("relu", activation(inplace=True))
 
 
 class INReLUConv(nn.Sequential):
-    def __init__(self, in_channels, out_channels, kernel_size=3, mode="valid"):
+    def __init__(
+        self, in_channels, out_channels, kernel_size=3, mode="valid", norm=None
+    ):
         super(INReLUConv, self).__init__()
-        self.add_module("norm_relu", INReLU(in_channels))
+        self.add_module("norm_relu", INReLU(in_channels, norm=norm))
         self.add_module(
-            "conv", conv(in_channels, out_channels, kernel_size=kernel_size, mode=mode)
+            "conv", conv(in_channels, out_channels, kernel_size=kernel_size, mode=mode, bias=not norm)
         )
 
         self.mode = mode
@@ -54,10 +59,10 @@ class INReLUConv(nn.Sequential):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, channels, mode="valid"):
+    def __init__(self, channels, mode="valid", norm=None):
         super(ResBlock, self).__init__()
-        self.conv1 = INReLUConv(channels, channels, mode=mode)
-        self.conv2 = INReLUConv(channels, channels, mode=mode)
+        self.conv1 = INReLUConv(channels, channels, mode=mode, norm=norm)
+        self.conv2 = INReLUConv(channels, channels, mode=mode, norm=norm)
         self.inner_crop_margin = utils.sum3(
             self.conv1.crop_margin, self.conv2.crop_margin
         )
@@ -76,11 +81,15 @@ class ResBlock(nn.Module):
 
 
 class ConvBlock(nn.Sequential):
-    def __init__(self, in_channels, out_channels, mode="valid"):
+    def __init__(self, in_channels, out_channels, mode="valid", norm=None):
         super(ConvBlock, self).__init__()
-        self.add_module("pre", INReLUConv(in_channels, out_channels, mode=mode))
-        self.add_module("res", ResBlock(out_channels, mode=mode))
-        self.add_module("post", INReLUConv(out_channels, out_channels, mode=mode))
+        self.add_module(
+            "pre", INReLUConv(in_channels, out_channels, mode=mode, norm=norm)
+        )
+        self.add_module("res", ResBlock(out_channels, mode=mode, norm=norm))
+        self.add_module(
+            "post", INReLUConv(out_channels, out_channels, mode=mode, norm=norm)
+        )
 
         self.crop_margin = self.compute_crop()
 
@@ -89,10 +98,14 @@ class ConvBlock(nn.Sequential):
 
 
 class DownConvBlock(nn.Sequential):
-    def __init__(self, in_channels, out_channels, scale_factor, mode="valid"):
+    def __init__(
+        self, in_channels, out_channels, scale_factor, mode="valid", norm=None
+    ):
         super(DownConvBlock, self).__init__()
         self.add_module("maxpool", nn.MaxPool3d((2, 2, 2)))
-        self.add_module("conv", ConvBlock(in_channels, out_channels, mode=mode))
+        self.add_module(
+            "conv", ConvBlock(in_channels, out_channels, mode=mode, norm=norm)
+        )
 
         self.crop_margin = self.compute_crop()
 
@@ -101,11 +114,11 @@ class DownConvBlock(nn.Sequential):
 
 
 class UpBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, scale_factor=(1, 2, 2)):
+    def __init__(self, in_channels, out_channels, scale_factor=(1, 2, 2), norm=None):
         super(UpBlock, self).__init__()
         self.up = nn.Sequential(
             nn.Upsample(scale_factor=scale_factor, mode="trilinear"),
-            conv(in_channels, out_channels, kernel_size=1),
+            conv(in_channels, out_channels, kernel_size=1, bias=not norm),
         )
 
     def forward(self, x, skip, margin):
@@ -113,10 +126,12 @@ class UpBlock(nn.Module):
 
 
 class UpConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, scale_factor=(1, 2, 2), mode="valid"):
+    def __init__(
+        self, in_channels, out_channels, scale_factor=(1, 2, 2), mode="valid", norm=None
+    ):
         super(UpConvBlock, self).__init__()
         self.up = UpBlock(in_channels, out_channels, scale_factor=scale_factor)
-        self.conv = ConvBlock(out_channels, out_channels, mode=mode)
+        self.conv = ConvBlock(out_channels, out_channels, mode=mode, norm=norm)
 
         self.crop_margin = self.compute_crop()
         self.scale_factor = scale_factor
@@ -135,6 +150,7 @@ class RUNet(nn.Module):
         width: list[int] = [16, 32, 64, 128, 256, 512],
         scale_factor: tuple[int, int, int] = (2, 2, 2),
         mode: str = "valid",
+        norm: Optional[nn.Module] = nn.InstanceNorm3d,
     ):
         super(RUNet, self).__init__()
         assert len(width) > 1
@@ -145,16 +161,18 @@ class RUNet(nn.Module):
         self.dconvs = nn.ModuleList()
         for d in range(depth):
             self.dconvs.append(
-                DownConvBlock(width[d], width[d + 1], scale_factor, mode=mode)
+                DownConvBlock(
+                    width[d], width[d + 1], scale_factor, mode=mode, norm=norm
+                )
             )
 
         self.uconvs = nn.ModuleList()
         for d in reversed(range(depth)):
             self.uconvs.append(
-                UpConvBlock(width[d + 1], width[d], scale_factor, mode=mode)
+                UpConvBlock(width[d + 1], width[d], scale_factor, mode=mode, norm=norm)
             )
 
-        self.final = INReLU(width[0])
+        self.final = INReLU(width[0], norm=norm)
 
         self.scale_factor = scale_factor
         self.inner_crop_margins = self.compute_inner_crops()
@@ -214,7 +232,7 @@ class RUNet(nn.Module):
             mintopsz = utils.sum3(mintopsz, crop)
             mintopsz = utils.div3(mintopsz, (2, 2, 2))
 
-        mintopsz = utils.sum3(mintopsz, (1, 1, 1)) # need at least one extra voxel
+        mintopsz = utils.sum3(mintopsz, (1, 1, 1))  # need at least one extra voxel
 
         def input_size(topsz):
             sz = topsz
