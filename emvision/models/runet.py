@@ -130,7 +130,7 @@ class UpConvBlock(nn.Module):
         self, in_channels, out_channels, scale_factor=(1, 2, 2), mode="valid", norm=None
     ):
         super(UpConvBlock, self).__init__()
-        self.up = UpBlock(in_channels, out_channels, scale_factor=scale_factor)
+        self.up = UpBlock(in_channels, out_channels, scale_factor=scale_factor, norm=norm)
         self.conv = ConvBlock(out_channels, out_channels, mode=mode, norm=norm)
 
         self.crop_margin = self.compute_crop()
@@ -156,7 +156,7 @@ class RUNet(nn.Module):
         assert len(width) > 1
         depth = len(width) - 1
 
-        self.iconv = ConvBlock(width[0], width[0])
+        self.iconv = ConvBlock(width[0], width[0], norm=norm)
 
         self.dconvs = nn.ModuleList()
         for d in range(depth):
