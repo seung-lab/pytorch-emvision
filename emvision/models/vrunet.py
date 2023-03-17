@@ -39,26 +39,26 @@ def conv(in_channels, out_channels, mode, kernel_size=3, stride=1, bias=False):
                      stride=stride, padding=padding, bias=bias)
 
 
-class BNAct(nn.Sequential):
+class INAct(nn.Sequential):
     def __init__(self, in_channels):
-        super(BNAct, self).__init__()
-        self.add_module('norm', nn.BatchNorm3d(in_channels))
+        super().__init__()
+        self.add_module('norm', nn.InstanceNorm3d(in_channels))
         self.add_module('act', getattr(nn, nonlinearity)(**params))
 
 
-class BNActConv(nn.Sequential):
+class INActConv(nn.Sequential):
     def __init__(self, in_channels, out_channels, mode, kernel_size=3):
-        super(BNActConv, self).__init__()
-        self.add_module('norm_act', BNAct(in_channels))
+        super().__init__()
+        self.add_module('norm_act', INAct(in_channels))
         self.add_module('conv', conv(in_channels, out_channels, mode,
                                      kernel_size=kernel_size))
 
 
 class ResBlock(nn.Module):
     def __init__(self, channels):
-        super(ResBlock, self).__init__()
-        self.conv1 = BNActConv(channels, channels, 'same')
-        self.conv2 = BNActConv(channels, channels, 'same')
+        super().__init__()
+        self.conv1 = INActConv(channels, channels, 'same')
+        self.conv2 = INActConv(channels, channels, 'same')
 
     def forward(self, x):
         residual = x
@@ -70,15 +70,15 @@ class ResBlock(nn.Module):
 
 class ConvBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels):
-        super(ConvBlock, self).__init__()
-        self.add_module('pre',  BNActConv(in_channels, out_channels, 'valid'))
+        super().__init__()
+        self.add_module('pre',  INActConv(in_channels, out_channels, 'valid'))
         self.add_module('res',  ResBlock(out_channels))
-        self.add_module('post', BNActConv(out_channels, out_channels, 'valid'))
+        self.add_module('post', INActConv(out_channels, out_channels, 'valid'))
 
 
 class Upsample(nn.Module):
     def __init__(self, mode, scale_factor):
-        super(Upsample, self).__init__()
+        super().__init__()
         if mode == 'nearest':
             self.mode = mode
             self.upsample = nn.Upsample(scale_factor=scale_factor[-1], mode=mode)
@@ -98,7 +98,7 @@ class Upsample(nn.Module):
 
 class UpBlock(nn.Module):
     def __init__(self, in_channels, out_channels, mode, scale_factor):
-        super(UpBlock, self).__init__()
+        super().__init__()
         self.up = nn.Sequential(
             Upsample(mode, scale_factor),
             conv(in_channels, out_channels, 'same', kernel_size=1),
@@ -111,7 +111,7 @@ class UpBlock(nn.Module):
 
 class UpConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, mode, scale_factor):
-        super(UpConvBlock, self).__init__()
+        super().__init__()
         self.up = UpBlock(in_channels, out_channels, mode, scale_factor)
         self.conv = ConvBlock(out_channels, out_channels)
 
@@ -122,7 +122,7 @@ class UpConvBlock(nn.Module):
 
 class VRUNet(nn.Module):
     def __init__(self, width, mode, scale_factor):
-        super(VRUNet, self).__init__()
+        super().__init__()
         assert len(width) > 1
         depth = len(width) - 1
 
@@ -130,7 +130,7 @@ class VRUNet(nn.Module):
 
         self.dconvs = nn.ModuleList()
         for d in range(depth):
-            self.dconvs.append(nn.Sequential(nn.MaxPool3d((1,2,2)),
+            self.dconvs.append(nn.Sequential(nn.MaxPool3d(scale_factor),
                                              ConvBlock(width[d], width[d+1])))
 
         self.uconvs = nn.ModuleList()
@@ -138,7 +138,7 @@ class VRUNet(nn.Module):
             self.uconvs.append(UpConvBlock(width[d+1], width[d],
                                            mode, scale_factor))
 
-        self.final = BNAct(width[0])
+        self.final = INAct(width[0])
 
         self.init_weights()
 
