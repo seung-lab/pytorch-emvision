@@ -260,3 +260,20 @@ class RUNet(nn.Module):
             utils.sub3(inputsz, utils.mul3(self.crop_margin, (2, 2, 2)))
             for inputsz in self.input_patch_sizes(num_shapes)
         ]
+
+
+if __name__ == '__main__':
+    import torch
+
+    model = RUNet(width=[16, 32, 64, 128])
+    x = torch.randn([1, 16, 256, 256, 256])
+    torch.onnx.export(
+        model,
+        (x, {}),
+        "RUNet.onnx",
+        verbose=False,
+        export_params=True,
+        opset_version=11,
+        input_names=["input"],
+        output_names=["output"],
+    )

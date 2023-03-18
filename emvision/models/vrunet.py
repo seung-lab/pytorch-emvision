@@ -172,3 +172,20 @@ class VRUNet(nn.Module):
                     )
                 else:
                     nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+
+
+if __name__ == '__main__':
+    import torch
+
+    model = vrunet(width=[16, 32, 64, 128])
+    x = torch.randn([1, 16, 48, 148, 148])
+    torch.onnx.export(
+        model,
+        (x, {}),
+        "VRUNet.onnx",
+        verbose=False,
+        export_params=True,
+        opset_version=11,
+        input_names=["input"],
+        output_names=["output"],
+    )

@@ -5,3 +5,4 @@ emvision.egg-info/
 */**/*.pyc
 */**/*~
 *~
+*.onnx
