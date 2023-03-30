@@ -250,3 +250,10 @@ class RUNet(nn.Module):
             utils.sub3(inputsz, utils.mul3(self.crop_margin, (2, 2, 2)))
             for inputsz in self.input_patch_sizes(num_shapes)
         ]
+
+    def patch_size_pairs(self, num_shapes):
+        """Computes paired input and output shapes for valid input patch sizes."""
+        inputs = self.input_patch_sizes(num_shapes)
+        outputs = self.output_patch_sizes(num_shapes)
+
+        return list(zip(inputs, outputs))
