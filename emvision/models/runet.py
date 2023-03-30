@@ -37,7 +37,7 @@ class INReLU(nn.Sequential):
     def __init__(self, in_channels, norm=nn.InstanceNorm3d, activation=nn.ReLU):
         super(INReLU, self).__init__()
         if norm:
-            self.add_module("norm", norm(in_channels))
+            self.add_module("norm", norm(in_channels, affine=True))
         self.add_module("relu", activation(inplace=True))
 
 
