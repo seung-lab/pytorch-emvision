@@ -156,7 +156,7 @@ class RUNet(nn.Module):
         assert len(width) > 1
         depth = len(width) - 1
 
-        self.iconv = ConvBlock(width[0], width[0], norm=norm)
+        self.iconv = ConvBlock(width[0], width[0], mode=mode, norm=norm)
 
         self.dconvs = nn.ModuleList()
         for d in range(depth):
