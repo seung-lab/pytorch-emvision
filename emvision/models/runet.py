@@ -3,12 +3,11 @@ Residual U-Net with same or valid convolutions
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional, Type
 
 import torch.nn as nn
 
 from . import utils
-
 
 __all__ = ["RUNet"]
 
@@ -19,7 +18,7 @@ def conv(
     kernel_size: int = 3,
     stride: int = 1,
     bias: bool = False,
-    mode: str = "valid",
+    mode: Literal["same", "valid"] = "valid",
 ):
     """Convolution paired with the required padding."""
     padding = utils.pad_size(kernel_size, mode)
@@ -34,8 +33,8 @@ def conv(
 
 
 class INReLU(nn.Sequential):
-    def __init__(self, in_channels, norm=nn.InstanceNorm3d, activation=nn.ReLU):
-        super(INReLU, self).__init__()
+    def __init__(self, in_channels: int, norm=nn.InstanceNorm3d, activation=nn.ReLU):
+        super().__init__()
         if norm:
             self.add_module("norm", norm(in_channels, affine=True))
         self.add_module("relu", activation(inplace=True))
@@ -45,10 +44,17 @@ class INReLUConv(nn.Sequential):
     def __init__(
         self, in_channels, out_channels, kernel_size=3, mode="valid", norm=None
     ):
-        super(INReLUConv, self).__init__()
+        super().__init__()
         self.add_module("norm_relu", INReLU(in_channels, norm=norm))
         self.add_module(
-            "conv", conv(in_channels, out_channels, kernel_size=kernel_size, mode=mode, bias=not norm)
+            "conv",
+            conv(
+                in_channels,
+                out_channels,
+                kernel_size=kernel_size,
+                mode=mode,
+                bias=not norm,
+            ),
         )
 
         self.mode = mode
@@ -60,7 +66,7 @@ class INReLUConv(nn.Sequential):
 
 class ResBlock(nn.Module):
     def __init__(self, channels, mode="valid", norm=None):
-        super(ResBlock, self).__init__()
+        super().__init__()
         self.conv1 = INReLUConv(channels, channels, mode=mode, norm=norm)
         self.conv2 = INReLUConv(channels, channels, mode=mode, norm=norm)
         self.inner_crop_margin = utils.sum3(
@@ -77,12 +83,13 @@ class ResBlock(nn.Module):
         return x
 
     def compute_crop(self):
-        return tuple(map(sum, zip(*(m.crop_margin for n, m in self.named_children()))))
+        child_crop_margins = [m.crop_margin for _, m in self.named_children()]
+        return tuple(map(sum, zip(*child_crop_margins)))
 
 
 class ConvBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels, mode="valid", norm=None):
-        super(ConvBlock, self).__init__()
+        super().__init__()
         self.add_module(
             "pre", INReLUConv(in_channels, out_channels, mode=mode, norm=norm)
         )
@@ -94,15 +101,16 @@ class ConvBlock(nn.Sequential):
         self.crop_margin = self.compute_crop()
 
     def compute_crop(self):
-        return tuple(map(sum, zip(*(m.crop_margin for n, m in self.named_children()))))
+        child_crop_margins = [m.crop_margin for _, m in self.named_children()]
+        return tuple(map(sum, zip(*child_crop_margins)))
 
 
 class DownConvBlock(nn.Sequential):
     def __init__(
         self, in_channels, out_channels, scale_factor, mode="valid", norm=None
     ):
-        super(DownConvBlock, self).__init__()
-        self.add_module("maxpool", nn.MaxPool3d((2, 2, 2)))
+        super().__init__()
+        self.add_module("maxpool", nn.MaxPool3d(scale_factor))
         self.add_module(
             "conv", ConvBlock(in_channels, out_channels, mode=mode, norm=norm)
         )
@@ -114,8 +122,8 @@ class DownConvBlock(nn.Sequential):
 
 
 class UpBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, scale_factor=(1, 2, 2), norm=None):
-        super(UpBlock, self).__init__()
+    def __init__(self, in_channels, out_channels, scale_factor, norm=None):
+        super().__init__()
         self.up = nn.Sequential(
             nn.Upsample(scale_factor=scale_factor, mode="trilinear"),
             conv(in_channels, out_channels, kernel_size=1, bias=not norm),
@@ -127,10 +135,12 @@ class UpBlock(nn.Module):
 
 class UpConvBlock(nn.Module):
     def __init__(
-        self, in_channels, out_channels, scale_factor=(1, 2, 2), mode="valid", norm=None
+        self, in_channels, out_channels, scale_factor, mode="valid", norm=None
     ):
-        super(UpConvBlock, self).__init__()
-        self.up = UpBlock(in_channels, out_channels, scale_factor=scale_factor, norm=norm)
+        super().__init__()
+        self.up = UpBlock(
+            in_channels, out_channels, scale_factor, norm=norm
+        )
         self.conv = ConvBlock(out_channels, out_channels, mode=mode, norm=norm)
 
         self.crop_margin = self.compute_crop()
@@ -149,10 +159,10 @@ class RUNet(nn.Module):
         self,
         width: list[int] = [16, 32, 64, 128, 256, 512],
         scale_factor: tuple[int, int, int] = (2, 2, 2),
-        mode: str = "valid",
-        norm: Optional[nn.Module] = nn.InstanceNorm3d,
+        mode: Literal["same", "valid"] = "valid",
+        norm: Optional[Type[nn.Module]] = nn.InstanceNorm3d,
     ):
-        super(RUNet, self).__init__()
+        super().__init__()
         assert len(width) > 1
         depth = len(width) - 1
 
@@ -257,3 +267,21 @@ class RUNet(nn.Module):
         outputs = self.output_patch_sizes(num_shapes)
 
         return list(zip(inputs, outputs))
+
+
+if __name__ == '__main__':
+    import torch
+
+    model = RUNet(width=[16, 32, 64, 128])
+    x = torch.randn([1, 16, 256, 256, 256])
+    torch.onnx.export(
+        model,
+        (x, {}),
+        "RUNet.onnx",
+        verbose=False,
+        export_params=True,
+        opset_version=11,
+        input_names=["input"],
+        output_names=["output"],
+    )
+

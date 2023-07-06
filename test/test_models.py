@@ -92,7 +92,7 @@ class Tester(unittest.TestCase):
         x = torch.randn(1,2,48,148,148).to(device)
         y = net(x)
         # (48,148,148) -> (20,60,60)
-        print("VRUnet: {} -> {}".format(x.size(), y.size()))
+        # print("VRUnet: {} -> {}".format(x.size(), y.size()))
 
     def test_vrunet_nearest(self):
         from emvision.models import vrunet
@@ -101,7 +101,7 @@ class Tester(unittest.TestCase):
         x = torch.randn(1,2,48,148,148).to(device)
         y = net(x)
         # (48,148,148) -> (20,60,60)
-        print("VRUnet: {} -> {}".format(x.size(), y.size()))
+        # print("VRUnet: {} -> {}".format(x.size(), y.size()))
 
     def test_dynamic_rsunet(self):
         from emvision.models import dynamic_rsunet
