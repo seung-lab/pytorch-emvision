@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 from . import utils
@@ -26,9 +25,9 @@ def set_nonlinearity(act, **act_params):
         params['inplace'] = True
 
 
-def rsunet_act_gn(width, zfactor=None, group=16, act='ReLU', **act_params):
+def rsunet_act_gn(width, zfactor=None, group=16, eps=1e-5, affine=True, act='ReLU', **act_params):
     set_nonlinearity(act, **act_params)
-    return RSUNet(width, group, zfactor=zfactor)
+    return RSUNet(width, group, zfactor=zfactor, eps=eps, affine=affine)
 
 
 def conv(in_channels, out_channels, kernel_size=3, stride=1, bias=False):
@@ -38,25 +37,25 @@ def conv(in_channels, out_channels, kernel_size=3, stride=1, bias=False):
 
 
 class GNAct(nn.Sequential):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, eps=1e-5, affine=True):
         super(GNAct, self).__init__()
-        self.add_module('norm', nn.GroupNorm(in_channels//G, in_channels))
+        self.add_module('norm', nn.GroupNorm(in_channels // G, in_channels, eps=eps, affine=affine))
         self.add_module('act', getattr(nn, nonlinearity)(**params))
 
 
 class GNActConv(nn.Sequential):
-    def __init__(self, in_channels, out_channels, kernel_size=3):
+    def __init__(self, in_channels, out_channels, kernel_size=3, eps=1e-5, affine=True):
         super(GNActConv, self).__init__()
-        self.add_module('norm_act', GNAct(in_channels))
+        self.add_module('norm_act', GNAct(in_channels, eps=eps, affine=affine))
         self.add_module('conv', conv(in_channels, out_channels,
                                      kernel_size=kernel_size))
 
 
 class ResBlock(nn.Module):
-    def __init__(self, channels):
+    def __init__(self, channels, eps=1e-5, affine=True):
         super(ResBlock, self).__init__()
-        self.conv1 = GNActConv(channels, channels)
-        self.conv2 = GNActConv(channels, channels)
+        self.conv1 = GNActConv(channels, channels, eps=eps, affine=affine)
+        self.conv2 = GNActConv(channels, channels, eps=eps, affine=affine)
 
     def forward(self, x):
         residual = x
@@ -67,15 +66,15 @@ class ResBlock(nn.Module):
 
 
 class ConvBlock(nn.Sequential):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, eps=1e-5, affine=True):
         super(ConvBlock, self).__init__()
-        self.add_module('pre',  GNActConv(in_channels, out_channels))
-        self.add_module('res',  ResBlock(out_channels))
-        self.add_module('post', GNActConv(out_channels, out_channels))
+        self.add_module('pre',  GNActConv(in_channels, out_channels, eps=eps, affine=affine))
+        self.add_module('res',  ResBlock(out_channels, eps=eps, affine=affine))
+        self.add_module('post', GNActConv(out_channels, out_channels, eps=eps, affine=affine))
 
 
 class UpBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, up=(1,2,2)):
+    def __init__(self, in_channels, out_channels, up=(1, 2, 2)):
         super(UpBlock, self).__init__()
         self.up = nn.Sequential(
             # nn.Upsample(scale_factor=up, mode='trilinear'),
@@ -88,10 +87,10 @@ class UpBlock(nn.Module):
 
 
 class UpConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, up=(1,2,2)):
+    def __init__(self, in_channels, out_channels, up=(1, 2, 2), eps=1e-5, affine=True):
         super(UpConvBlock, self).__init__()
         self.up = UpBlock(in_channels, out_channels, up=up)
-        self.conv = ConvBlock(out_channels, out_channels)
+        self.conv = ConvBlock(out_channels, out_channels, eps=eps, affine=affine)
 
     def forward(self, x, skip):
         x = self.up(x, skip)
@@ -99,7 +98,7 @@ class UpConvBlock(nn.Module):
 
 
 class RSUNet(nn.Module):
-    def __init__(self, width, group, zfactor=None):
+    def __init__(self, width, group, zfactor=None, eps=1e-5, affine=True):
         super(RSUNet, self).__init__()
         assert len(width) > 1
         depth = len(width) - 1
@@ -111,18 +110,18 @@ class RSUNet(nn.Module):
         global G
         G = group
 
-        self.iconv = ConvBlock(width[0], width[0])
+        self.iconv = ConvBlock(width[0], width[0], eps=eps, affine=affine)
 
         self.dconvs = nn.ModuleList()
         for d in range(depth):
-            self.dconvs.append(nn.Sequential(nn.MaxPool3d((zfactor[d],2,2)),
-                                             ConvBlock(width[d], width[d+1])))
+            self.dconvs.append(nn.Sequential(nn.MaxPool3d((zfactor[d], 2, 2)),
+                                             ConvBlock(width[d], width[d + 1], eps=eps, affine=affine)))
 
         self.uconvs = nn.ModuleList()
         for d in reversed(range(depth)):
-            self.uconvs.append(UpConvBlock(width[d+1], width[d], up=(zfactor[d],2,2)))
+            self.uconvs.append(UpConvBlock(width[d + 1], width[d], up=(zfactor[d], 2, 2), eps=eps, affine=affine))
 
-        self.final = GNAct(width[0])
+        self.final = GNAct(width[0], eps=eps, affine=affine)
 
         self.init_weights()
 
