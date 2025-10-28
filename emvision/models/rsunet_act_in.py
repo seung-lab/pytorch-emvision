@@ -39,7 +39,7 @@ def conv(in_channels, out_channels, kernel_size=3, stride=1, bias=False):
 class INAct(nn.Sequential):
     def __init__(self, in_channels):
         super().__init__()
-        self.add_module('norm', nn.InstanceNorm3d(in_channels))
+        self.add_module('norm', nn.InstanceNorm3d(in_channels, affine=True))
         self.add_module('act', getattr(nn, nonlinearity)(**params))
 
 
